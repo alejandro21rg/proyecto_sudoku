@@ -1,10 +1,9 @@
-# proyecto_sudoku
 #  SuGoku Solver
 
 ### Resolución Inteligente de Sudokus mediante Visión Artificial y Deep Learning
 ---
 
-# 📖 Descripción
+#  Descripción
 
 **SuGoku Solver** es una aplicación basada en Inteligencia Artificial capaz de detectar, interpretar y resolver automáticamente sudokus a partir de una fotografía o imagen proporcionada por el usuario.
 
