@@ -49,12 +49,3 @@ def detectar_y_recortar_sudoku(
 
     return sudoku_recortado
 
-
-# EJEMPLO DE USO
-if __name__ == "__main__":
-
-    detectar_y_recortar_sudoku(
-        imagen_entrada="sudoku_online.png",
-        modelo_sudoku="best_1.pt",
-        salida="imagen_recortada2.png"
-    )

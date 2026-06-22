@@ -21,8 +21,7 @@ def dividir_tablero(imagen_tablero, carpeta_salida="celdas"):
     os.makedirs(carpeta_salida, exist_ok=True)
     contador = 0
 
-    # 🚨 INCREMENTAMOS EL MARGEN DE SEGURIDAD (aprox 14-16% del tamaño de la celda)
-    # Esto recorta los bordes negros conflictivos que la CNN confunde con números 1
+    # Margen de seguridad (aprox 14-16% del tamaño de la celda)
     margen_h = max(3, int(cell_h * 0.14))
     margen_w = max(3, int(cell_w * 0.14))
 
@@ -54,14 +53,20 @@ def cargar_modelo(ruta_modelo="modelo_class/modelo2_cnn.keras"):
 
 def predict_celda(img_celda, model):
     """
-    Procesa una celda aplicando centrado por momentos geométricos 
-    para evitar distorsiones entre 1, 5, 6 y 7.
+    Procesa una celda aplicando centrado directo y filtros basados en 
+    relaciones de aspecto para evitar distorsiones entre 1, 2 y 7.
     """
     if img_celda is None or img_celda.size == 0:
         return 0
 
+    # --- CORRECCIÓN SEGURA DE CANALES ---
     if len(img_celda.shape) == 3:
-        img_gray = cv2.cvtColor(img_celda[:, :, :3], cv2.COLOR_BGR2GRAY)
+        if img_celda.shape[2] == 3:  # BGR estándar
+            img_gray = cv2.cvtColor(img_celda, cv2.COLOR_BGR2GRAY)
+        elif img_celda.shape[2] == 4:  # BGRA
+            img_gray = cv2.cvtColor(img_celda, cv2.COLOR_BGRA2GRAY)
+        else:  # Gris con dimensión extra (H, W, 1)
+            img_gray = img_celda[:, :, 0].copy()
     else:
         img_gray = img_celda.copy()
 
@@ -81,6 +86,7 @@ def predict_celda(img_celda, model):
 
     img_final = np.zeros((28, 28), dtype=np.uint8)
     encontrado = False
+    w_box, h_box = 0, 0  # <--- Inicializadas siempre a 0 aquí arriba para evitar errores
 
     if contornos_padre:
         # Filtrar contornos que sean demasiado grandes (ruido de bordes)
@@ -90,67 +96,87 @@ def predict_celda(img_celda, model):
             c_numero = max(contornos_validos, key=cv2.contourArea)
             x, y, w_box, h_box = cv2.boundingRect(c_numero)
 
-            # VALIDACIÓN CRÍTICA: Si el número es extremadamente pequeño, es ruido de fondo
-            if h_box < (h_c * 0.20) or w_box < (w_c * 0.10):
-                return 0
-
+            # Si el contorno tiene un tamaño mínimo razonable para ser un número
             if w_box >= 2 and h_box >= 4:
                 digito = img_init_bin[y : y + h_box, x : x + w_box]
 
-                # Redimensionar manteniendo aspecto (máximo 18 píxeles)
+                # Redimensionar manteniendo aspecto (máximo 18 píxeles estilo MNIST)
                 factor = min(18 / h_box, 18 / w_box)
                 nuevo_w = max(1, int(w_box * factor))
                 nuevo_h = max(1, int(h_box * factor))
                 digito_scaled = cv2.resize(digito, (nuevo_w, nuevo_h))
 
-                # --- CENTRADO INTELIGENTE POR CENTRO DE MASA ---
-                # Creamos un lienzo temporal
-                temp_canvas = np.zeros((28, 28), dtype=np.uint8)
+                # Centrado simétrico directo en el lienzo de 28x28 (Método Seguro)
                 start_y = (28 - nuevo_h) // 2
                 start_x = (28 - nuevo_w) // 2
-                temp_canvas[start_y : start_y + nuevo_h, start_x : start_x + nuevo_w] = digito_scaled
-
-                # Calculamos los momentos para ajustar al centro de masa real
-                M = cv2.moments(temp_canvas)
-                if M["m00"] != 0:
-                    cx = int(M["m10"] / M["m00"])
-                    cy = int(M["m01"] / M["m00"])
-                    # Desplazamos el dígito para que el centro de masa esté exactamente en (14, 14)
-                    shift_x = 14 - cx
-                    shift_y = 14 - cy
-                    T = np.float32([[1, 0, shift_x], [0, 1, shift_y]])
-                    img_final = cv2.warpAffine(temp_canvas, T, (28, 28))
-                else:
-                    img_final = temp_canvas
-                
+                img_final[start_y : start_y + nuevo_h, start_x : start_x + nuevo_w] = digito_scaled
                 encontrado = True
 
-    # Si la celda apenas tiene píxeles activos, está vacía
-    if not encontrado or cv2.countNonZero(img_final) < 8:
+    # Si la celda no tiene contorno o tiene poquísimos píxeles activos, está vacía
+    # Bajado a 14 para asegurar que lea los "1" tipográficos finos sin ignorarlos
+    if not encontrado or cv2.countNonZero(img_final) < 14:
         return 0
 
-    # 3. Predicción directa con la CNN (Sin parches "if" manuales)
+    # Predicción directa con la CNN
     img_cnn = img_final.astype("float32") / 255.0
     img_cnn = img_cnn.reshape(1, 28, 28, 1)
 
     pred = model.predict(img_cnn, verbose=0)
     clase_predicha = np.argmax(pred)
 
+    # --- REGLAS DE DESEMPATE GEOMÉTRICO ---
+    relacion_aspecto = w_box / float(h_box) if h_box > 0 else 0
+    
+    # Caso A: Cree que es un 1, pero es ancho -> Es un 7
+    if clase_predicha == 1:
+        if relacion_aspecto > 0.48:
+            clase_predicha = 7
+
+    # Caso B: Cree que es un 7
+    elif clase_predicha == 7:
+        # 1. Si es extremadamente estrecho, es un 1 lineal que confunde a la CNN
+        if relacion_aspecto < 0.38:
+            clase_predicha = 1
+            
+        # 2. Si es muy ancho y tiene peso en la base inferior, es un 2
+        elif relacion_aspecto > 0.60:
+            mitad_inferior = img_final[18:28, :]
+            if cv2.countNonZero(mitad_inferior) > (cv2.countNonZero(img_final) * 0.35):
+                clase_predicha = 2
+
     return int(clase_predicha)
 
 
 def generar_matriz(carpeta_celdas="celdas", ruta_modelo="modelo_class/modelo2_cnn.keras"):
     """
-    Genera la matriz 9x9 a partir de las 81 celdas.
+    Genera la matriz 9x9 a partir de las 81 celdas y exporta los archivos correspondientes.
     """
     modelo = cargar_modelo(ruta_modelo)
     tablero = []
 
     for i in range(81):
         ruta = f"{carpeta_celdas}/celda_{i}.jpg"
-        img = cv2.imread(ruta)
+        # Forzamos la lectura en escala de grises tal como en tu script de prueba
+        img = cv2.imread(ruta, cv2.IMREAD_GRAYSCALE)
         valor = predict_celda(img, modelo)
         tablero.append(valor)
 
     sudoku_matriz = np.array(tablero).reshape(9, 9)
+    
+    # --- EXPORTAR LA MATRIZ PARA EL MODELO 3 ---
+    np.save("sudoku_detectado.npy", sudoku_matriz)
+    np.savetxt("sudoku_detectado.txt", sudoku_matriz, fmt="%d")
+    
     return sudoku_matriz
+
+# Bloque de ejecución para pruebas locales
+if __name__ == "__main__":
+    print("Procesando tablero y generando matriz...")
+    # Asegúrate de ajustar las rutas si lo ejecutas directamente de forma local
+    try:
+        matriz = generar_matriz()
+        print("\nMatriz del Sudoku generada con éxito:")
+        print(matriz)
+        print("\n¡Matriz exportada con éxito para el Modelo 3 (.npy y .txt)!")
+    except Exception as e:
+        print(f"Nota/Error en ejecución directa: {e}")

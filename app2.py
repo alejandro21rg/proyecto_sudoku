@@ -6,7 +6,7 @@ import numpy as np
 import os 
 import shutil
 
-# Importamos tus modelos
+# Importamos modelos
 from modelo_yolo.modelo_1 import detectar_y_recortar_sudoku
 from modelo_class.modelo_2 import (
     dividir_tablero,
@@ -117,7 +117,7 @@ st.image(
 )
 
 st.title("SUDOKU")
-st.subheader("Resolución automática de Sudokus mediante Deep Learning")
+st.subheader("Resolución automática de Sudokus")
 
 st.write(
     """
@@ -178,12 +178,12 @@ if uploaded_file is not None:
                     ruta_modelo="modelo_class/modelo2_cnn.keras"
                 )
                 
-                st.write("### 🔍 Lo que la IA está leyendo realmente:")
-                st.dataframe(tablero_detectado)
+                # st.write("### está leyendo realmente:")
+                # st.dataframe(tablero_detectado)
 
 
                 # =====================
-                # MODELO 3 (BACKTRACKING) - Solución
+                # MODELO 3 (BACKTRACKING) 
                 # =====================
                 
                 solucion = resolver_sudoku(tablero_detectado)
@@ -215,7 +215,7 @@ if uploaded_file is not None:
 
                 st.warning(
             """
-            🟠 SuGoku no ha podido resolver este tablero.
+             SuGoku no ha podido resolver este tablero.
 
             Parece que algunos números no se han detectado correctamente.
 
