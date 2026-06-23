@@ -13,7 +13,7 @@ from modelo_class.modelo_2 import (
     dividir_tablero,
     generar_matriz
 )
-from modelo_juego.deep import resolver_sudoku
+from modelo_juego.deep import resolver_sudoku_dl
 
 def mostrar_sudoku(matriz, titulo, matriz_original=None):
 
@@ -118,7 +118,7 @@ st.image(
 )
 
 st.title("SUDOKU")
-st.subheader("Resolución automática de Sudokus mediante Deep Learning")
+st.subheader(" NO resolución automática de Sudokus mediante Deep Learning")
 
 st.write(
     """
@@ -185,18 +185,17 @@ if uploaded_file is not None:
 
                 
 
-               # =====================
-                # MODELO 3 (BACKTRACKING) - Solución
-                # =====================
                 
-                solucion = resolver_sudoku(tablero_detectado)
+                # MODELO 3 (DEEP LEARNING - PROFESOR) 
+                
+                # Pasamos la matriz que detectó el Modelo 2 (OCR)
+                # Asegúrate de guardar el archivo del modelo en la ruta correcta
+                solucion = resolver_sudoku_dl(
+                    tablero_detectado, 
+                    ruta_modelo="modelos/cnn_1m.keras" 
+                )
 
-                st.write("Sudoku leído:")
-                st.dataframe(tablero_detectado)
-
-                st.write("Predicción modelo 3:")
-                st.dataframe(solucion)
-
+                # El resto del código de visualización se mantiene exactamente igual
                 tablero_vis = tablero_detectado.tolist()
                 solucion_vis = solucion.tolist()
 
